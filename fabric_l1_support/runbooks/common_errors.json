@@ -1,0 +1,65 @@
+[
+  {
+    "error_pattern": "OperationTimeout",
+    "category": "transient",
+    "root_cause": "Pipeline activity timed out waiting for Fabric capacity.",
+    "resolution": "Auto-rerun. If recurring, increase activity timeout or scale up capacity.",
+    "is_auto_fixable": true
+  },
+  {
+    "error_pattern": "TooManyRequests|429|RateLimitExceeded",
+    "category": "transient",
+    "root_cause": "API rate limit hit from too many concurrent requests.",
+    "resolution": "Auto-rerun with exponential backoff.",
+    "is_auto_fixable": true
+  },
+  {
+    "error_pattern": "AuthenticationFailed|TokenExpired|401",
+    "category": "auth",
+    "root_cause": "AAD token expired or invalid service principal credentials.",
+    "resolution": "Refresh token and rerun. Check if SP certificate/secret expired.",
+    "is_auto_fixable": true
+  },
+  {
+    "error_pattern": "ServiceUnavailable|503|Connection refused",
+    "category": "infra",
+    "root_cause": "Source system temporarily unavailable.",
+    "resolution": "Auto-rerun after brief wait. Alert if persists > 3 attempts.",
+    "is_auto_fixable": true
+  },
+  {
+    "error_pattern": "GatewayTimeout|504|BadGateway|502|Connection reset|network error|host unreachable",
+    "category": "transient",
+    "root_cause": "Transient network/gateway failure reaching the source endpoint (502/504 or dropped connection).",
+    "resolution": "Auto-rerun. Network blips are self-healing; escalate only if it persists > 3 attempts.",
+    "is_auto_fixable": true
+  },
+  {
+    "error_pattern": "SchemaError|ColumnNotFound|TypeMismatch|DataTypeConversion",
+    "category": "schema",
+    "root_cause": "Source schema changed breaking downstream pipeline expectations.",
+    "resolution": "Manual fix required. Update pipeline schema mapping.",
+    "is_auto_fixable": false
+  },
+  {
+    "error_pattern": "FileNotFound|TableNotFoundException|ResourceNotFound|404",
+    "category": "source_missing",
+    "root_cause": "Expected source file or table does not exist.",
+    "resolution": "Manual fix required. Verify source path and upstream pipeline status.",
+    "is_auto_fixable": false
+  },
+  {
+    "error_pattern": "AccessDenied|Forbidden|403|Unauthorized|PermissionDenied",
+    "category": "permission",
+    "root_cause": "Service principal lacks required permissions on source/destination.",
+    "resolution": "Manual fix required. Grant required RBAC/ADLS permissions to SP.",
+    "is_auto_fixable": false
+  },
+  {
+    "error_pattern": "UniqueConstraintViolation|DuplicateKey|NullConstraint|CheckConstraint",
+    "category": "data_quality",
+    "root_cause": "Source data violates target table constraints.",
+    "resolution": "Manual fix required. Investigate source data quality and apply cleansing.",
+    "is_auto_fixable": false
+  }
+]
