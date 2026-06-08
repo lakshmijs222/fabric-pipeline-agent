@@ -1,0 +1,41 @@
+# Runs the Fabric L1 Support Bot + Dashboard as two long-running services.
+#
+#   docker compose up --build        # start both
+#   docker compose logs -f bot       # follow bot logs
+#   docker compose down              # stop
+#
+# Credentials come from the local .env file (same one the bot uses).
+# Both services share named volumes so the dashboard reads the audit log
+# the bot writes, and state survives restarts.
+
+services:
+  bot:
+    build: .
+    image: fabric-l1-support:latest
+    env_file: .env
+    command: ["python", "main.py"]
+    volumes:
+      - fabric-data:/app/data
+      - fabric-logs:/app/logs
+    restart: unless-stopped
+
+  dashboard:
+    build: .
+    image: fabric-l1-support:latest
+    env_file: .env
+    command:
+      - streamlit
+      - run
+      - dashboard/app.py
+      - --server.port=8503
+      - --server.address=0.0.0.0
+    ports:
+      - "8503:8503"
+    volumes:
+      - fabric-data:/app/data
+      - fabric-logs:/app/logs
+    restart: unless-stopped
+
+volumes:
+  fabric-data:
+  fabric-logs:

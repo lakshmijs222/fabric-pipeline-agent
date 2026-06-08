@@ -1,0 +1,19 @@
+# Secrets — injected at runtime as environment variables, never baked in
+.env
+
+# Local-only / regenerable
+__pycache__/
+*.pyc
+*.pyo
+data/
+logs/
+*.jsonl
+
+# Windows launchers — not used inside the Linux container
+*.bat
+
+# Repo metadata / docs not needed at runtime
+.git/
+.gitignore
+DEPLOY.md
+CREATE_TEST_PIPELINE.md
