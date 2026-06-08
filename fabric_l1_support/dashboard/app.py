@@ -34,16 +34,16 @@ st.markdown("""
     font-family: 'Inter', sans-serif;
 }
 
-/* Hide streamlit chrome — but DON'T hide the whole header: it holds the
-   sidebar expand control. Hide only the menu/toolbar, keep header usable. */
+/* Hide Streamlit chrome — but keep the header toolbar present, because the
+   sidebar EXPAND button lives inside stToolbar. So hide only the deploy/menu
+   actions (not the whole toolbar). */
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
-[data-testid="stToolbar"] { display: none !important; }
 [data-testid="stDecoration"] { display: none !important; }
+[data-testid="stToolbarActions"] { display: none !important; }
+[data-testid="stAppDeployButton"] { display: none !important; }
 header[data-testid="stHeader"] { background: transparent !important; box-shadow: none !important; }
 /* keep the sidebar collapse/expand controls visible & clickable */
-[data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"],
 [data-testid="stSidebarCollapseButton"],
 [data-testid="stExpandSidebarButton"] {
     visibility: visible !important;
@@ -51,8 +51,7 @@ header[data-testid="stHeader"] { background: transparent !important; box-shadow:
     display: flex !important;
     z-index: 1000 !important;
 }
-[data-testid="stSidebarCollapsedControl"] svg,
-[data-testid="collapsedControl"] svg,
+[data-testid="stExpandSidebarButton"] svg,
 [data-testid="stSidebarCollapseButton"] svg {
     color: #58a6ff !important; fill: #58a6ff !important;
 }
