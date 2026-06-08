@@ -37,6 +37,15 @@ st.markdown("""
 /* Hide streamlit chrome */
 #MainMenu, footer, header { visibility: hidden; }
 [data-testid="stToolbar"] { display: none; }
+/* ...but keep the sidebar expand arrow visible & clickable when collapsed */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"] {
+    visibility: visible !important;
+    display: flex !important;
+    z-index: 1000 !important;
+}
+[data-testid="stSidebarCollapsedControl"] svg,
+[data-testid="collapsedControl"] svg { color: #58a6ff !important; fill: #58a6ff !important; }
 [data-testid="stSidebar"] { background: #0d1117; border-right: 1px solid #21262d; }
 [data-testid="stSidebar"] * { color: #8b949e !important; }
 .block-container { padding: 2rem 2rem 2rem 2rem !important; max-width: 1400px; }
