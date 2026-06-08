@@ -16,7 +16,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 st.set_page_config(
-    page_title="Fabric Pipeline Failure Agent",
+    page_title="Self-Healing Fabric Pipelines",
     page_icon=":wrench:",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -523,7 +523,7 @@ recover_rate = round(recovered / fixed * 100, 1) if fixed else 0
 st.markdown(f"""
 <div class="agent-header">
   <div>
-    <div class="agent-title">Fabric Pipeline Failure Agent</div>
+    <div class="agent-title">Self-Healing Fabric Pipelines</div>
     <div class="agent-subtitle">
       Workspace: {FABRIC_WORKSPACE_ID[:8]}...{FABRIC_WORKSPACE_ID[-4:]} &nbsp;|&nbsp;
       Scan interval: 2 min &nbsp;|&nbsp;
