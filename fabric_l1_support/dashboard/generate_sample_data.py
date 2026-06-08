@@ -36,6 +36,45 @@ ROOT_CAUSES = {
     "source_missing": ["Source file '/raw/2024/sales.parquet' not found", "Lakehouse table 'stg_orders' does not exist"],
     "unknown": ["Internal Fabric engine error 0x8004005", "Unexpected crash in activity worker"],
 }
+ERROR_MESSAGES = {
+    "transient": [
+        "OperationTimeout: Activity 'CopyData' timed out after 30s waiting for Fabric capacity.",
+        "TooManyRequests (429): Rate limit exceeded calling source REST API.",
+        "Connection pool exhausted: no available connections in pool (max=100).",
+    ],
+    "auth": [
+        "AuthenticationFailed (401): AAD token expired during pipeline execution.",
+        "TokenExpired: Service principal secret was rotated; bearer token rejected.",
+        "AADSTS700027: Certificate thumbprint mismatch for service principal.",
+    ],
+    "infra": [
+        "ServiceUnavailable (503): Source SQL Server temporarily unavailable.",
+        "ADLS Gen2 endpoint returned 503 ServiceUnavailable.",
+    ],
+    "schema": [
+        "SchemaError: Column 'order_date' not found in source dataset.",
+        "DataTypeConversion: expected INT but received VARCHAR for column 'amount'.",
+        "ColumnNotFound: new column added to source breaks sink mapping.",
+    ],
+    "permission": [
+        "AccessDenied (403): Service principal lacks 'Storage Blob Data Reader' on ADLS.",
+        "Forbidden (403): RBAC role removed from Lakehouse 'SQL_Migration_LH'.",
+        "PermissionDenied: source IP blocked by firewall whitelist.",
+    ],
+    "data_quality": [
+        "NullConstraintViolation: column 'customer_id' contains NULL values.",
+        "DuplicateKey: primary key constraint violated on 'order_id'.",
+        "CheckConstraint failed: amount > 0 violated by 14 rows.",
+    ],
+    "source_missing": [
+        "FileNotFound: source file '/raw/2024/sales.parquet' does not exist.",
+        "TableNotFoundException: Lakehouse table 'stg_orders' does not exist.",
+    ],
+    "unknown": [
+        "Internal Fabric engine error 0x8004005 (no further detail).",
+        "Unexpected crash in activity worker; correlationId unavailable.",
+    ],
+}
 
 records = []
 now = datetime.utcnow()
@@ -70,6 +109,15 @@ for day_offset in range(30):  # 30 days of data
             success = False
 
         root_cause = random.choice(ROOT_CAUSES[category])
+        error_message = random.choice(ERROR_MESSAGES[category])
+        # Verified outcome of the rerun: True=recovered, False=failed again,
+        # None=no rerun / still running.
+        if action == "auto_rerun":
+            rerun_succeeded = random.choices([True, False, None], weights=[0.8, 0.1, 0.1])[0]
+        elif action == "max_retries_exceeded":
+            rerun_succeeded = False
+        else:
+            rerun_succeeded = None
         pipeline_id = f"pip_{abs(hash(pipeline)) % 100000:05d}"
         workspace_id = random.choice(["ws-prod-001", "ws-prod-002", "ws-dev-001"])
 
@@ -81,10 +129,12 @@ for day_offset in range(30):  # 30 days of data
             "workspace_id": workspace_id,
             "error_category": category,
             "is_auto_fixable": is_fixable,
+            "error_message": error_message,
             "root_cause": root_cause,
             "action_taken": action,
             "success": success,
             "new_run_id": f"run_{random.randint(100000, 999999)}" if success else None,
+            "rerun_succeeded": rerun_succeeded,
             "retry_count": retry_count,
             "confidence_score": round(random.uniform(0.72, 0.99), 2),
             "message": f"{'Auto-fixed' if success else 'Escalated'}: {root_cause}",

@@ -1,15 +1,22 @@
 """Auto-healing engine: decides and executes fixes for failed pipelines."""
+import asyncio
 import logging
 from datetime import datetime
+from typing import Optional
 
 from src.api.fabric_client import FabricClient
-from src.models.schemas import ActionTaken, DiagnosisResult, FixResult
+from src.models.schemas import ActionTaken, DiagnosisResult, FixResult, PipelineStatus
 from src.rag.knowledge_base import KnowledgeBase
 
 logger = logging.getLogger(__name__)
 
 MAX_RETRIES_PER_PIPELINE = 3
 RETRY_BACKOFF_SECONDS = {1: 60, 2: 300, 3: 900}  # 1m, 5m, 15m
+
+# After triggering a rerun, poll its status to verify the outcome.
+# Bounded so a long-running pipeline doesn't block the handler indefinitely.
+VERIFY_MAX_CHECKS = 6          # number of status checks
+VERIFY_INTERVAL_SECONDS = 20   # wait between checks (=> up to ~2 min budget)
 
 
 class AutoHealer:
@@ -72,11 +79,22 @@ class AutoHealer:
         if new_run_id:
             self._retries[pipeline_id] = retry_count + 1
 
-            # Record successful resolution in KB for future reference
+            # Verify the rerun actually succeeded (poll its status, bounded).
+            rerun_succeeded = await self._verify_rerun(
+                run.workspace_id, pipeline_id, new_run_id
+            )
+            if rerun_succeeded is True:
+                outcome = "verified succeeded"
+            elif rerun_succeeded is False:
+                outcome = "reran but FAILED again"
+            else:
+                outcome = "rerun still running (unverified)"
+
+            # Record resolution in KB for future reference
             self._kb.add_resolved_incident(
                 error_message=run.error_message or "",
                 root_cause=diagnosis.root_cause,
-                resolution=f"Auto-rerun triggered. New run_id: {new_run_id}",
+                resolution=f"Auto-rerun triggered (new run_id: {new_run_id}) — {outcome}.",
                 pipeline_name=run.pipeline_name,
             )
 
@@ -86,11 +104,12 @@ class AutoHealer:
                 new_run_id=new_run_id,
                 success=True,
                 message=(
-                    f"Pipeline auto-fixed. New run triggered. "
+                    f"Pipeline auto-fixed. New run triggered ({outcome}). "
                     f"Run ID: {new_run_id} "
                     f"(Attempt {retry_count + 1}/{MAX_RETRIES_PER_PIPELINE})"
                 ),
                 retry_count=retry_count + 1,
+                rerun_succeeded=rerun_succeeded,
             )
         else:
             return FixResult(
@@ -101,6 +120,28 @@ class AutoHealer:
                 message="Rerun API call failed. Manual intervention required.",
                 retry_count=retry_count,
             )
+
+    async def _verify_rerun(
+        self, workspace_id: str, pipeline_id: str, new_run_id: str
+    ) -> Optional[bool]:
+        """Poll the rerun's status to confirm it actually succeeded.
+
+        Returns True (succeeded), False (failed/cancelled), or None if it is
+        still running once the verification budget is exhausted.
+        """
+        for _ in range(VERIFY_MAX_CHECKS):
+            status = await self._fabric.get_run_status(
+                workspace_id, pipeline_id, new_run_id
+            )
+            if status == PipelineStatus.SUCCEEDED:
+                logger.info(f"Rerun {new_run_id} verified SUCCEEDED.")
+                return True
+            if status in (PipelineStatus.FAILED, PipelineStatus.CANCELLED):
+                logger.warning(f"Rerun {new_run_id} FAILED again (status={status}).")
+                return False
+            await asyncio.sleep(VERIFY_INTERVAL_SECONDS)
+        logger.info(f"Rerun {new_run_id} still running after verification budget.")
+        return None
 
     def reset_retries(self, pipeline_id: str):
         """Reset retry counter when pipeline succeeds."""

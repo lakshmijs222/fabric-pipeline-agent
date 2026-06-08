@@ -3,12 +3,17 @@
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+# India Standard Time (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
 from pathlib import Path
 
+import httpx
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from dotenv import load_dotenv
 
 st.set_page_config(
     page_title="Fabric Pipeline Failure Agent",
@@ -95,7 +100,7 @@ st.markdown("""
 /* KPI Cards */
 .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 16px;
     margin-bottom: 28px;
 }
@@ -117,6 +122,7 @@ st.markdown("""
 .kpi-green::after  { background: #3fb950; }
 .kpi-yellow::after { background: #d29922; }
 .kpi-blue::after   { background: #388bfd; }
+.kpi-teal::after   { background: #2dd4bf; }
 .kpi-purple::after { background: #8957e5; }
 
 .kpi-label {
@@ -139,6 +145,7 @@ st.markdown("""
 .kpi-green  .kpi-value { color: #3fb950; }
 .kpi-yellow .kpi-value { color: #d29922; }
 .kpi-blue   .kpi-value { color: #388bfd; }
+.kpi-teal   .kpi-value { color: #2dd4bf; }
 .kpi-purple .kpi-value { color: #8957e5; }
 .kpi-sub {
     font-size: 12px;
@@ -289,9 +296,49 @@ st.markdown("""
 
 # ── Config ────────────────────────────────────────────────────────────────────
 _HERE = Path(__file__).parent.parent
+load_dotenv(_HERE / ".env")  # make Fabric credentials available to the dashboard
 AUDIT_LOG = Path(os.environ.get("AUDIT_LOG_PATH", str(_HERE / "logs" / "audit.jsonl")))
 FABRIC_WORKSPACE_ID = os.environ.get("FABRIC_WORKSPACE_IDS", "a078c6ff-84af-4f0e-b177-381e4bba48ee").split(",")[0]
 FABRIC_URL = f"https://app.fabric.microsoft.com/groups/{FABRIC_WORKSPACE_ID}/list?experience=fabric-developer"
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_workspace_pipeline_count(workspace_id: str):
+    """Live count of all DataPipelines in the Fabric workspace.
+
+    Returns an int, or None if credentials are missing or the API call fails
+    (so the dashboard degrades gracefully instead of erroring).
+    """
+    tenant = os.environ.get("AZURE_TENANT_ID")
+    client = os.environ.get("AZURE_CLIENT_ID")
+    secret = os.environ.get("AZURE_CLIENT_SECRET")
+    if not all([tenant, client, secret]):
+        return None
+    try:
+        token_resp = httpx.post(
+            f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client,
+                "client_secret": secret,
+                "scope": "https://api.fabric.microsoft.com/.default",
+            },
+            timeout=15.0,
+        )
+        token_resp.raise_for_status()
+        token = token_resp.json()["access_token"]
+        items_resp = httpx.get(
+            f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/items",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15.0,
+        )
+        items_resp.raise_for_status()
+        return sum(
+            1 for it in items_resp.json().get("value", [])
+            if it.get("type") == "DataPipeline"
+        )
+    except Exception:
+        return None
 
 PLOTLY_BASE = dict(
     paper_bgcolor="rgba(0,0,0,0)",
@@ -367,33 +414,58 @@ def filter_days(df, days):
     if df.empty: return df
     return df[df["timestamp"] >= pd.Timestamp.utcnow() - timedelta(days=days)]
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("**Fabric L1 Bot**")
-    st.markdown(f"[Open Workspace]({FABRIC_URL})")
-    st.markdown("---")
-    date_range = st.selectbox(
-        "Date Range",
-        [1, 7, 14, 30],
-        format_func=lambda x: f"Last {x} day{'s' if x>1 else ''}",
-        index=3,
-    )
-    if st.button("Refresh"):
-        st.cache_data.clear()
-        st.rerun()
-    st.caption("Auto-refreshes every 60s")
-
 # ── Load ──────────────────────────────────────────────────────────────────────
 df_all = load_data()
 if df_all.empty:
     st.error("No audit data found. Run: `python main.py`")
     st.stop()
-df = filter_days(df_all, date_range)
+
+# IST date bounds for the date picker
+_ist_dates = df_all["timestamp"].dt.tz_convert(IST).dt.date
+_min_date, _max_date = _ist_dates.min(), _ist_dates.max()
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("**Fabric L1 Bot**")
+    st.markdown(f"[Open Workspace]({FABRIC_URL})")
+    st.markdown("---")
+    filter_mode = st.radio("Filter by", ["Date range", "Specific date"], index=0)
+    if filter_mode == "Date range":
+        date_range = st.selectbox(
+            "Date Range",
+            [1, 7, 14, 30],
+            format_func=lambda x: f"Last {x} day{'s' if x>1 else ''}",
+            index=3,
+        )
+        selected_date = None
+    else:
+        selected_date = st.date_input(
+            "Pick a date (IST)",
+            value=_max_date,
+            min_value=_min_date,
+            max_value=_max_date,
+        )
+        date_range = None
+    if st.button("Refresh"):
+        st.cache_data.clear()
+        st.rerun()
+    st.caption("Auto-refreshes every 60s")
+
+# ── Apply filter ──────────────────────────────────────────────────────────────
+if selected_date is not None:
+    df = df_all[df_all["timestamp"].dt.tz_convert(IST).dt.date == selected_date]
+    period_label = selected_date.strftime("%d %b %Y")
+    empty_msg = f"No data for {period_label} (IST)."
+else:
+    df = filter_days(df_all, date_range)
+    period_label = f"LAST {date_range} DAYS"
+    empty_msg = f"No data in last {date_range} days."
+
 if df.empty:
-    st.warning(f"No data in last {date_range} days.")
+    st.warning(empty_msg)
     st.stop()
 
-now_str = datetime.utcnow().strftime("%I:%M:%S %p")
+now_str = datetime.now(IST).strftime("%d %b %Y, %I:%M:%S %p IST")
 total     = len(df)
 fixed     = int((df["action_taken"] == "auto_rerun").sum())
 escalated = int((df["action_taken"] == "alert_sent").sum())
@@ -403,6 +475,14 @@ avg_conf  = round(df["confidence_score"].mean()*100, 1) if "confidence_score" in
 
 today_df = filter_days(df, 1)
 today_count = len(today_df)
+
+total_pipelines = get_workspace_pipeline_count(FABRIC_WORKSPACE_ID)
+total_pipelines_display = total_pipelines if total_pipelines is not None else "—"
+with_failures = df["pipeline_name"].nunique()
+
+# Reruns that were VERIFIED to succeed (genuine recoveries), not just triggered
+recovered = int((df["rerun_succeeded"] == True).sum()) if "rerun_succeeded" in df.columns else 0
+recover_rate = round(recovered / fixed * 100, 1) if fixed else 0
 
 # ── Agent Header ──────────────────────────────────────────────────────────────
 st.markdown(f"""
@@ -428,6 +508,11 @@ st.markdown(f"""
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <div class="kpi-grid">
+  <div class="kpi-card kpi-blue">
+    <div class="kpi-label">Total Pipelines</div>
+    <div class="kpi-value">{total_pipelines_display}</div>
+    <div class="kpi-sub">in workspace &nbsp;({with_failures} with failures)</div>
+  </div>
   <div class="kpi-card kpi-red">
     <div class="kpi-label">Failed Pipelines</div>
     <div class="kpi-value">{total}</div>
@@ -436,7 +521,12 @@ st.markdown(f"""
   <div class="kpi-card kpi-green">
     <div class="kpi-label">Auto-Fixed</div>
     <div class="kpi-value">{fixed}</div>
-    <div class="kpi-sub">by agent &check; &nbsp;({fix_rate}%)</div>
+    <div class="kpi-sub">reruns triggered &nbsp;({fix_rate}%)</div>
+  </div>
+  <div class="kpi-card kpi-teal">
+    <div class="kpi-label">Recovered</div>
+    <div class="kpi-value">{recovered}</div>
+    <div class="kpi-sub">verified success after rerun &nbsp;({recover_rate}%)</div>
   </div>
   <div class="kpi-card kpi-yellow">
     <div class="kpi-label">Escalated</div>
@@ -454,7 +544,7 @@ st.markdown(f"""
 # ── Detected Failures Today ───────────────────────────────────────────────────
 st.markdown(f"""
 <div class="sec-header">
-  DETECTED FAILURES &mdash; LAST {date_range} DAYS
+  DETECTED FAILURES &mdash; {period_label}
   <span class="sec-badge">{total} failures</span>
 </div>
 """, unsafe_allow_html=True)
@@ -466,7 +556,14 @@ for _, row in recent.iterrows():
     cat     = row.get("error_category", "unknown")
     name    = row.get("pipeline_name", "Unknown Pipeline")
     cause   = row.get("root_cause", "")
-    ts      = row["timestamp"].strftime("%m/%d/%Y, %I:%M:%S %p") if hasattr(row["timestamp"], "strftime") else str(row["timestamp"])
+    err_msg = str(row.get("error_message", "") or "")
+    ts_val  = row["timestamp"]
+    if hasattr(ts_val, "tz_convert"):        # tz-aware (UTC) pandas Timestamp -> IST
+        ts = ts_val.tz_convert(IST).strftime("%d %b %Y, %I:%M:%S %p IST")
+    elif hasattr(ts_val, "strftime"):
+        ts = ts_val.strftime("%d %b %Y, %I:%M:%S %p IST")
+    else:
+        ts = str(ts_val)
     conf    = row.get("confidence_score", 0)
     retries = int(row.get("retry_count", 0))
     card_cls = CARD_CLASS.get(action, "")
@@ -486,7 +583,8 @@ for _, row in recent.iterrows():
     {"<span class='badge badge-info'>Retries: " + str(retries) + "/3</span>" if retries > 0 else ""}
     {"<span class='badge badge-info'>Confidence: " + str(int(conf*100)) + "%</span>" if conf else ""}
   </div>
-  {"<div class='incident-cause'>" + cause[:200] + ("..." if len(str(cause)) > 200 else "") + "</div>" if cause else ""}
+  {"<div class='incident-cause' style='color:#f0883e;'><b>Error:</b> " + err_msg[:240] + ("..." if len(err_msg) > 240 else "") + "</div>" if err_msg else ""}
+  {"<div class='incident-cause'><b>Root cause:</b> " + str(cause)[:200] + ("..." if len(str(cause)) > 200 else "") + "</div>" if cause else ""}
   <div class="incident-meta">{ts}</div>
 </div>
 """, unsafe_allow_html=True)

@@ -168,5 +168,16 @@ class FabricClient:
         logger.error(f"Failed to rerun pipeline {pipeline_id}: {resp.status_code} {resp.text}")
         return None
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    async def get_run_status(
+        self, workspace_id: str, pipeline_id: str, run_id: str
+    ) -> Optional[PipelineStatus]:
+        """Return the current status of a specific run, or None if not found."""
+        runs = await self.get_pipeline_runs(workspace_id, pipeline_id)
+        for r in runs:
+            if r.run_id == run_id:
+                return r.status
+        return None
+
     async def close(self):
         await self._http.aclose()

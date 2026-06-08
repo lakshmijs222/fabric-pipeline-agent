@@ -63,3 +63,8 @@ class FixResult:
     message: str
     timestamp: datetime = field(default_factory=datetime.utcnow)
     retry_count: int = 0
+    # Outcome of the triggered rerun, verified by polling its status:
+    #   True  = rerun completed successfully (genuinely recovered)
+    #   False = rerun ran but failed again
+    #   None  = no rerun, or still running / unverified within the time budget
+    rerun_succeeded: Optional[bool] = None
