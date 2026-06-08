@@ -5,6 +5,10 @@ Microsoft Fabric data pipelines that detects failures, diagnoses them with Claud
 a RAG knowledge base, **auto-heals** transient failures (and *verifies* the fix),
 escalates the rest, and surfaces everything on a live Streamlit dashboard.
 
+<p align="center">
+  <img src="docs/architecture.svg" alt="System architecture diagram" width="100%">
+</p>
+
 ---
 
 ## 1. Repository layout (two independent projects)
