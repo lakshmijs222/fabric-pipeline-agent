@@ -34,18 +34,28 @@ st.markdown("""
     font-family: 'Inter', sans-serif;
 }
 
-/* Hide streamlit chrome */
-#MainMenu, footer, header { visibility: hidden; }
-[data-testid="stToolbar"] { display: none; }
-/* ...but keep the sidebar expand arrow visible & clickable when collapsed */
+/* Hide streamlit chrome — but DON'T hide the whole header: it holds the
+   sidebar expand control. Hide only the menu/toolbar, keep header usable. */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+[data-testid="stToolbar"] { display: none !important; }
+[data-testid="stDecoration"] { display: none !important; }
+header[data-testid="stHeader"] { background: transparent !important; box-shadow: none !important; }
+/* keep the sidebar collapse/expand controls visible & clickable */
 [data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"] {
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stExpandSidebarButton"] {
     visibility: visible !important;
+    opacity: 1 !important;
     display: flex !important;
     z-index: 1000 !important;
 }
 [data-testid="stSidebarCollapsedControl"] svg,
-[data-testid="collapsedControl"] svg { color: #58a6ff !important; fill: #58a6ff !important; }
+[data-testid="collapsedControl"] svg,
+[data-testid="stSidebarCollapseButton"] svg {
+    color: #58a6ff !important; fill: #58a6ff !important;
+}
 [data-testid="stSidebar"] { background: #0d1117; border-right: 1px solid #21262d; }
 [data-testid="stSidebar"] * { color: #8b949e !important; }
 .block-container { padding: 2rem 2rem 2rem 2rem !important; max-width: 1400px; }
