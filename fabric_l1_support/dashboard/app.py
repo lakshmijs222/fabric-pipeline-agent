@@ -382,19 +382,30 @@ CARD_CLASS = {
 }
 
 # ── Data ──────────────────────────────────────────────────────────────────────
+def _load_sample_records() -> list:
+    """Fallback demo data when no real audit log exists (e.g. public showcase)."""
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from generate_sample_data import build_sample_records
+        return build_sample_records()
+    except Exception:
+        return []
+
 @st.cache_data(ttl=60)
 def load_data() -> pd.DataFrame:
-    if not AUDIT_LOG.exists():
-        return pd.DataFrame()
     records = []
-    with open(AUDIT_LOG, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                try:
-                    records.append(json.loads(line))
-                except:
-                    pass
+    if AUDIT_LOG.exists():
+        with open(AUDIT_LOG, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        records.append(json.loads(line))
+                    except:
+                        pass
+    if not records:
+        records = _load_sample_records()
     if not records:
         return pd.DataFrame()
     df = pd.DataFrame(records)
@@ -419,6 +430,11 @@ df_all = load_data()
 if df_all.empty:
     st.error("No audit data found. Run: `python main.py`")
     st.stop()
+
+DEMO_MODE = not AUDIT_LOG.exists()
+if DEMO_MODE:
+    st.info("🟢 **Live demo** — showing sample data to showcase the Fabric L1 Support Agent. "
+            "In production this is populated by real pipeline runs.")
 
 # IST date bounds for the date picker
 _ist_dates = df_all["timestamp"].dt.tz_convert(IST).dt.date
